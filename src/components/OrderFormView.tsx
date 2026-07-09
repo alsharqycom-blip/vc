@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Save, Eraser, Printer, ArrowRight, Layers, Layout, Grid, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Save, Eraser, Printer, ArrowRight, Layers, Layout, Grid, Sparkles, Upload, Camera, Trash2, Image, X, Video, RefreshCw } from 'lucide-react';
 import { Order, UnitSize, ApplianceSize, AccessorySelected, HardwareSelected } from '../types';
 import { getStoredLookups } from '../lib/storage';
 import { useToast } from './Toast';
@@ -80,9 +80,104 @@ export default function OrderFormView({ initialOrder, onSave, onNavigate }: Orde
   const [handel, setHandel] = useState('');
   const [glass, setGlass] = useState('');
 
-  // 9. External Image / Croqui URLs
+  // 9. External Image / Croqui URLs & Camera Uploads
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Stop camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  const startCamera = async () => {
+    setCameraError('');
+    setIsCameraActive(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err: any) {
+      console.error("Camera access failed, trying fallback input", err);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+      } catch (err2) {
+        setCameraError('فشل تشغيل الكاميرا. يرجى التحقق من صلاحيات المتصفح أو تحميل الصورة كملف.');
+        showToast('⚠️ تعذر الوصول للكاميرا، يرجى تفعيل الصلاحية أو رفع الملف.', 'error');
+      }
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth || 640;
+      canvas.height = videoRef.current.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        setImageUrls(prev => [...prev, dataUrl]);
+        showToast('📸 تم التقاط الصورة وإضافتها للطلب بنجاح!', 'success');
+        stopCamera();
+      }
+    } catch (err) {
+      console.error("Failed to capture photo", err);
+      showToast('❌ فشل التقاط الصورة من الكاميرا', 'error');
+    }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    Array.from(files).forEach((file: File) => {
+      if (!file.type.startsWith('image/')) {
+        showToast('⚠️ يرجى اختيار ملفات صور فقط (PNG, JPG, JPEG)', 'warning');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        if (base64) {
+          setImageUrls(prev => [...prev, base64]);
+          showToast(`📸 تم تحميل الصورة "${file.name}" بنجاح!`, 'success');
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    if (e.target) e.target.value = '';
+  };
 
   // Tabs for accessories section
   const [activeAccTab, setActiveAccTab] = useState<'drawers' | 'flap' | 'basket'>('drawers');
@@ -246,7 +341,7 @@ export default function OrderFormView({ initialOrder, onSave, onNavigate }: Orde
     ];
 
     const orderData: Order = {
-      id: initialOrder ? initialOrder.id : `ORD-${Date.now()}`,
+      id: (initialOrder && !initialOrder.isDuplicate) ? initialOrder.id : `ORD-${Date.now()}`,
       customerName,
       phone,
       address,
@@ -264,8 +359,8 @@ export default function OrderFormView({ initialOrder, onSave, onNavigate }: Orde
       designerName,
       status,
       stage,
-      date: initialOrder ? initialOrder.date : new Date().toISOString().split('T')[0],
-      createdAt: initialOrder ? initialOrder.createdAt : new Date().toISOString(),
+      date: (initialOrder && !initialOrder.isDuplicate) ? initialOrder.date : new Date().toISOString().split('T')[0],
+      createdAt: (initialOrder && !initialOrder.isDuplicate) ? initialOrder.createdAt : new Date().toISOString(),
       units,
       appliances,
       accessories,
@@ -376,12 +471,14 @@ export default function OrderFormView({ initialOrder, onSave, onNavigate }: Orde
           >
             <option value="قيد الانتظار">🕒 قيد الانتظار</option>
             <option value="في التصنيع">🏭 في التصنيع</option>
-            <option value="جاهز">✅ جاهز</option>
+            <option value="قيد التصنيع">🏭 قيد التصنيع</option>
+            <option value="جاهز">📦 جاهز للتركيب</option>
+            <option value="جاهز للشحن">🚚 جاهز للشحن</option>
             <option value="تم التركيب">🏠 تم التركيب</option>
-            <option value="Active">نشط (قيد التنفيذ)</option>
-            <option value="Pending">معلق (قيد الانتظار)</option>
-            <option value="Completed">مكتمل (تم التسليم)</option>
-            <option value="Cancelled">ملغي</option>
+            <option value="Active">⚙️ نشط (قيد التنفيذ)</option>
+            <option value="Pending">🕒 معلق (قيد الانتظار)</option>
+            <option value="Completed">✅ مكتمل (تم التسليم)</option>
+            <option value="Cancelled">❌ ملغي</option>
           </select>
         </div>
       </div>
@@ -597,6 +694,8 @@ export default function OrderFormView({ initialOrder, onSave, onNavigate }: Orde
             </div>
           </div>
         </div>
+
+
 
         {/* Architectural Drawings & Images Section */}
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm space-y-4">
@@ -1037,6 +1136,177 @@ export default function OrderFormView({ initialOrder, onSave, onNavigate }: Orde
               </select>
             </div>
           </div>
+        </div>
+
+        {/* 📁 قسم المخططات الهندسية وتصاميم المطابخ بالكاميرا / Blueprints & Camera Designs */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm space-y-4">
+          <div className="border-b pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <h3 className="text-xs font-black text-brand-gold flex items-center gap-1.5">
+              <Image size={15} />
+              📁 المخططات الهندسية وصور تصاميم المطابخ (Blueprints & Kitchen Designs)
+            </h3>
+            <span className="text-[10px] text-brand-med font-bold bg-brand-gold/10 text-brand-gold px-2.5 py-0.5 rounded-full">
+              عدد الصور المرفقة: {imageUrls.length}
+            </span>
+          </div>
+
+          <p className="text-[11px] text-brand-med leading-relaxed">
+            يمكنك تحميل صور المخططات الفنية أو كروكي المطبخ مباشرة من جهازك، أو استخدام الكاميرا لالتقاط صورة فورية للمخطط في المعرض أو الورشة.
+          </p>
+
+          {/* الكاميرا المباشرة */}
+          {isCameraActive && (
+            <div className="bg-gray-900 rounded-xl p-4 border border-gray-800 flex flex-col items-center space-y-3 relative overflow-hidden shadow-inner">
+              <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-red-600/95 text-white px-2.5 py-1 rounded-full text-[9px] font-black animate-pulse shadow">
+                <span className="w-2 h-2 rounded-full bg-white"></span>
+                بث الكاميرا النشط / LIVE
+              </div>
+
+              <div className="w-full max-w-md aspect-video bg-black rounded-lg overflow-hidden relative border border-gray-700">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover scale-x-[-1]"
+                />
+              </div>
+
+              {cameraError && (
+                <div className="text-rose-500 font-bold text-[11px] text-center max-w-sm">
+                  {cameraError}
+                </div>
+              )}
+
+              <div className="flex gap-2.5 justify-center">
+                <button
+                  type="button"
+                  onClick={capturePhoto}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-lg text-xs flex items-center gap-1.5 shadow transition-all cursor-pointer"
+                >
+                  <Camera size={14} />
+                  التقاط الصورة الآن 📸
+                </button>
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-lg text-xs flex items-center gap-1.5 shadow transition-all cursor-pointer"
+                >
+                  <X size={14} />
+                  إغلاق الكاميرا
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* خيارات الإدخال والتحميل */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* تحميل ملف */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-4 bg-gray-50 hover:bg-gray-100 border border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center gap-1.5 text-center transition-all cursor-pointer shadow-sm hover:border-brand-gold group"
+            >
+              <Upload size={20} className="text-brand-gold group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-black text-brand-dark">تحميل صور من الجهاز</span>
+              <span className="text-[9px] text-gray-400">يدعم PNG, JPG, JPEG</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+            </button>
+
+            {/* استخدام الكاميرا مباشرة */}
+            <button
+              type="button"
+              onClick={startCamera}
+              disabled={isCameraActive}
+              className={`p-4 border border-dashed rounded-xl flex flex-col items-center justify-center gap-1.5 text-center transition-all cursor-pointer shadow-sm group ${
+                isCameraActive
+                  ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-50 hover:bg-gray-100 border-gray-300 hover:border-brand-gold text-brand-dark'
+              }`}
+            >
+              <Camera size={20} className={`${isCameraActive ? 'text-gray-400' : 'text-brand-gold group-hover:scale-110 transition-transform'}`} />
+              <span className="text-xs font-black">التقاط مباشرة بالكاميرا</span>
+              <span className="text-[9px] text-gray-400">استخدام كاميرا الجوال / الويب</span>
+            </button>
+
+            {/* إضافة رابط خارجي كخيار إضافي مريح */}
+            <div className="p-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl flex flex-col justify-center gap-2">
+              <span className="text-xs font-black text-brand-dark text-center">أو إضافة صورة برابط إنترنت (URL)</span>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  placeholder="https://example.com/image.jpg"
+                  value={newImageUrl}
+                  onChange={(e) => setNewImageUrl(e.target.value)}
+                  className="flex-1 p-1.5 border border-gray-200 rounded text-[10px] text-left outline-none focus:border-brand-gold bg-white"
+                  dir="ltr"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newImageUrl.trim()) {
+                      setImageUrls(prev => [...prev, newImageUrl.trim()]);
+                      setNewImageUrl('');
+                      showToast('✅ تم إضافة رابط الصورة للطلب!', 'success');
+                    } else {
+                      showToast('⚠️ يرجى كتابة رابط صورة صحيح أولاً.', 'warning');
+                    }
+                  }}
+                  className="px-2 py-1 bg-brand-dark text-white rounded text-[10px] font-black hover:bg-brand-gold cursor-pointer"
+                >
+                  إضافة
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* معرض الصور المرفقة حالياً بالطلب */}
+          {imageUrls.length > 0 && (
+            <div className="space-y-2.5 pt-2">
+              <span className="text-[11px] font-black text-brand-dark block">🖼️ الصور والمخططات المرفقة حالياً:</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                {imageUrls.map((url, idx) => (
+                  <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50 p-1 flex flex-col justify-between shadow-sm">
+                    <div className="aspect-square bg-white rounded-lg overflow-hidden flex items-center justify-center border border-gray-150">
+                      <img
+                        src={url}
+                        alt={`مخطط فني ${idx + 1}`}
+                        referrerPolicy="no-referrer"
+                        className="object-contain w-full h-full max-h-[120px]"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://placehold.co/150x150/f3f4f6/a1a1aa?text=Image+Drawing';
+                        }}
+                      />
+                    </div>
+                    
+                    <div className="mt-1 flex items-center justify-between gap-1 px-1">
+                      <span className="text-[9px] font-bold text-brand-med">صورة #{idx + 1}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm('هل أنت متأكد من رغبتك في حذف هذه الصورة المرفقة؟')) {
+                            setImageUrls(prev => prev.filter((_, i) => i !== idx));
+                            showToast('🗑️ تم حذف الصورة المرفقة بنجاح.', 'info');
+                          }
+                        }}
+                        className="p-1 hover:bg-rose-50 rounded text-rose-600 transition-colors cursor-pointer"
+                        title="حذف الصورة"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Print Layout Signature Simulation block */}

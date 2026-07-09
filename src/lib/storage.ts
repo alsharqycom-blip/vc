@@ -1,4 +1,4 @@
-import { Order, ActivityLog, User } from '../types';
+import { Order, ActivityLog, User, Machine } from '../types';
 
 const STORAGE_ORDERS_KEY = 'vc_orders';
 const STORAGE_LOGS_KEY = 'vc_logs';
@@ -322,21 +322,42 @@ const DEFAULT_USERS: User[] = [
     role: 'designer',
     password: '123',
     permissions: ['create_order', 'edit_order', 'view_all']
+  },
+  {
+    email: 'alsharqy.com@gmail.com',
+    name: 'المصمم الشرقي',
+    role: 'designer',
+    password: '123',
+    permissions: ['create_order', 'edit_order', 'view_all']
   }
 ];
 
 export function getStoredUsers(): User[] {
   const local = localStorage.getItem(STORAGE_USERS_KEY);
-  if (!local) {
-    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(DEFAULT_USERS));
-    return DEFAULT_USERS;
+  let usersList = DEFAULT_USERS;
+  if (local) {
+    try {
+      usersList = JSON.parse(local);
+    } catch (e) {
+      console.error("Error parsing users", e);
+      usersList = DEFAULT_USERS;
+    }
   }
-  try {
-    return JSON.parse(local);
-  } catch (e) {
-    console.error("Error parsing users", e);
-    return DEFAULT_USERS;
+
+  // Ensure alsharqy.com@gmail.com is present in the database so the user can test permissions immediately
+  const hasAlsharqy = usersList.some(u => u.email.toLowerCase() === 'alsharqy.com@gmail.com');
+  if (!hasAlsharqy) {
+    usersList.push({
+      email: 'alsharqy.com@gmail.com',
+      name: 'المصمم الشرقي',
+      role: 'designer',
+      password: '123',
+      permissions: ['create_order', 'edit_order', 'view_all']
+    });
+    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usersList));
   }
+
+  return usersList;
 }
 
 export function saveStoredUsers(users: User[], currentUserEmail: string) {
@@ -495,3 +516,141 @@ export function importFromCSV(csvText: string, currentUserEmail: string): { succ
     return { success: false, count: 0, error: err.message || 'حدث خطأ أثناء معالجة الملف المستورد' };
   }
 }
+
+// Company Profile & Styling Settings Storage
+export interface CompanySettings {
+  companyName: string;
+  companyDetails: string;
+  logoUrl: string;
+  themeColor: 'charcoal' | 'emerald' | 'navy' | 'burgundy' | 'bronze';
+}
+
+const STORAGE_COMPANY_KEY = 'vc_company_settings';
+
+const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
+  companyName: 'VILLE CUISINE',
+  companyDetails: 'شركة مصنع الصناعات الناعمة المحدودة - معارض مطابخ فيلا كوزين - الرياض، المملكة العربية السعودية',
+  logoUrl: '',
+  themeColor: 'charcoal'
+};
+
+export function getCompanySettings(): CompanySettings {
+  const local = localStorage.getItem(STORAGE_COMPANY_KEY);
+  if (!local) {
+    localStorage.setItem(STORAGE_COMPANY_KEY, JSON.stringify(DEFAULT_COMPANY_SETTINGS));
+    return DEFAULT_COMPANY_SETTINGS;
+  }
+  try {
+    return { ...DEFAULT_COMPANY_SETTINGS, ...JSON.parse(local) };
+  } catch (e) {
+    return DEFAULT_COMPANY_SETTINGS;
+  }
+}
+
+export function saveCompanySettings(settings: CompanySettings, currentUserEmail: string): CompanySettings {
+  localStorage.setItem(STORAGE_COMPANY_KEY, JSON.stringify(settings));
+  addActivityLog(currentUserEmail, "تعديل إعدادات الشركة", "تم تحديث الاسم التجاري، بيانات التواصل، الشعار والمظهر البصري للمصنع.");
+  return settings;
+}
+
+// Factory Machinery Maintenance System
+const STORAGE_MACHINES_KEY = 'vc_machines';
+
+const INITIAL_MACHINES: Machine[] = [
+  {
+    id: "MAC-001",
+    name: "منشار التقطيع الرقمي CNC",
+    model: "Homag Saw 320",
+    lastMaintenanceDate: "2026-04-10",
+    nextMaintenanceDate: "2026-07-10",
+    periodMonths: 3,
+    status: "working",
+    notes: "يتطلب تزييت دوري لشفرة المنشار وسير الحركة كل 3 أشهر."
+  },
+  {
+    id: "MAC-002",
+    name: "آلة كبس شريط الحواف الأوتوماتيكية",
+    model: "Biesse Edge 4.5",
+    lastMaintenanceDate: "2026-03-01",
+    nextMaintenanceDate: "2026-09-01",
+    periodMonths: 6,
+    status: "working",
+    notes: "فحص حرارة سخان الغراء وسرعة التغذية الذاتية."
+  },
+  {
+    id: "MAC-003",
+    name: "مكبس الرخام الصناعي الحراري",
+    model: "Hydraulic Press H-100",
+    lastMaintenanceDate: "2026-01-15",
+    nextMaintenanceDate: "2026-07-15",
+    periodMonths: 6,
+    status: "working",
+    notes: "فحص ضغط زيت الهيدروليك وسلامة صمامات الإغلاق."
+  },
+  {
+    id: "MAC-004",
+    name: "كابينة طلاء الدرف وتجهيز الأسطح",
+    model: "PaintBooth EcoFlow",
+    lastMaintenanceDate: "2026-05-20",
+    nextMaintenanceDate: "2026-06-20",
+    periodMonths: 1,
+    status: "maintenance_due",
+    notes: "تغيير فلاتر الهواء وفحص مرشحات سحب رذاذ الطلاء."
+  }
+];
+
+export function getMachines(): Machine[] {
+  const local = localStorage.getItem(STORAGE_MACHINES_KEY);
+  if (!local) {
+    localStorage.setItem(STORAGE_MACHINES_KEY, JSON.stringify(INITIAL_MACHINES));
+    return INITIAL_MACHINES;
+  }
+  try {
+    return JSON.parse(local);
+  } catch (e) {
+    return INITIAL_MACHINES;
+  }
+}
+
+export function saveMachines(machines: Machine[]): Machine[] {
+  localStorage.setItem(STORAGE_MACHINES_KEY, JSON.stringify(machines));
+  return machines;
+}
+
+export function addMachine(machine: Omit<Machine, 'id'>, currentUserEmail: string): Machine {
+  const machines = getMachines();
+  const newId = `MAC-${String(machines.length + 1).padStart(3, '0')}-${Math.floor(Math.random() * 1000)}`;
+  const newMachine: Machine = {
+    ...machine,
+    id: newId
+  };
+  machines.push(newMachine);
+  saveMachines(machines);
+  addActivityLog(currentUserEmail, "إضافة معدة للمصنع", `تم تسجيل آلة جديدة: ${newMachine.name} (موديل: ${newMachine.model})`);
+  return newMachine;
+}
+
+export function updateMachine(updated: Machine, currentUserEmail: string): Machine {
+  const machines = getMachines();
+  const idx = machines.findIndex(m => m.id === updated.id);
+  if (idx !== -1) {
+    machines[idx] = updated;
+    saveMachines(machines);
+    addActivityLog(currentUserEmail, "تعديل بيانات معدة", `تم تحديث بيانات أو جدول صيانة الآلة: ${updated.name}`);
+  }
+  return updated;
+}
+
+export function deleteMachine(id: string, currentUserEmail: string): boolean {
+  const machines = getMachines();
+  const found = machines.find(m => m.id === id);
+  if (found) {
+    const filtered = machines.filter(m => m.id !== id);
+    saveMachines(filtered);
+    addActivityLog(currentUserEmail, "حذف معدة من المصنع", `تم حذف الآلة: ${found.name} من سجلات المصنع.`);
+    return true;
+  }
+  return false;
+}
+
+

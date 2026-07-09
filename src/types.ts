@@ -43,7 +43,7 @@ export interface Order {
   shatterGlass: string;
   interiorCabinet: string;
   designerName: string;
-  status: 'قيد الانتظار' | 'في التصنيع' | 'جاهز' | 'تم التركيب' | 'Active' | 'Pending' | 'Completed' | 'Cancelled';
+  status: 'قيد الانتظار' | 'في التصنيع' | 'قيد التصنيع' | 'جاهز' | 'جاهز للشحن' | 'تم التركيب' | 'Active' | 'Pending' | 'Completed' | 'Cancelled';
   stage?: 'تصميم' | 'تقطيع' | 'تجميع' | 'طلاء' | 'تسليم';
   date: string;
   createdAt: string;
@@ -53,6 +53,7 @@ export interface Order {
   hardware: HardwareSelected[];
   imageUrls?: string[];
   archived?: boolean;
+  isDuplicate?: boolean;
 }
 
 export interface ActivityLog {
@@ -70,3 +71,15 @@ export interface User {
   password?: string;
   permissions?: string[];
 }
+
+export interface Machine {
+  id: string;
+  name: string;
+  model: string;
+  lastMaintenanceDate: string;
+  nextMaintenanceDate: string;
+  periodMonths: number;
+  status: 'working' | 'maintenance_due' | 'under_maintenance';
+  notes?: string;
+}
+

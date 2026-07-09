@@ -18,7 +18,18 @@ import {
   FolderHeart,
   FileDown,
   FileUp,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Clock,
+  Hammer,
+  Truck,
+  CheckCircle,
+  Home,
+  Play,
+  AlertCircle,
+  XCircle,
+  Package,
+  Copy,
+  MessageSquare
 } from 'lucide-react';
 import { Order, User as UserType } from '../types';
 import { exportToCSV, importFromCSV } from '../lib/storage';
@@ -32,10 +43,69 @@ interface CustomersProps {
   onEditOrder: (id: string) => void;
   onDeleteOrder: (id: string) => void;
   onToggleArchive: (id: string) => void;
+  onDuplicateOrder: (id: string) => void;
   onNavigate: (view: string) => void;
   onImportBackup: (json: string) => boolean;
   onExportBackup: () => void;
   onRefreshOrders: () => void;
+}
+
+export function renderStatusBadge(status: Order['status']) {
+  let badgeStyle = "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/30";
+  let icon = <Clock size={12} className="text-amber-500 shrink-0" />;
+  let text = status || "غير محدد";
+
+  switch (status) {
+    case 'قيد الانتظار':
+    case 'Pending':
+      badgeStyle = "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/30";
+      icon = <Clock size={12} className="text-amber-500 shrink-0 animate-pulse" />;
+      text = "قيد الانتظار";
+      break;
+    case 'في التصنيع':
+    case 'قيد التصنيع':
+      badgeStyle = "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/30";
+      icon = <Hammer size={12} className="text-blue-500 shrink-0" />;
+      text = "قيد التصنيع";
+      break;
+    case 'جاهز':
+      badgeStyle = "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100/30";
+      icon = <Package size={12} className="text-teal-500 shrink-0" />;
+      text = "جاهز للتركيب";
+      break;
+    case 'جاهز للشحن':
+      badgeStyle = "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/30";
+      icon = <Truck size={12} className="text-indigo-500 shrink-0" />;
+      text = "جاهز للشحن";
+      break;
+    case 'تم التركيب':
+      badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/30";
+      icon = <Home size={12} className="text-emerald-500 shrink-0" />;
+      text = "تم التركيب والانتهاء";
+      break;
+    case 'Completed':
+      badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/30";
+      icon = <CheckCircle size={12} className="text-emerald-500 shrink-0" />;
+      text = "تم التسليم (مكتمل)";
+      break;
+    case 'Active':
+      badgeStyle = "bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100/30";
+      icon = <Play size={12} className="text-sky-500 shrink-0" />;
+      text = "قيد التنفيذ (نشط)";
+      break;
+    case 'Cancelled':
+      badgeStyle = "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/30";
+      icon = <XCircle size={12} className="text-rose-500 shrink-0" />;
+      text = "ملغي";
+      break;
+  }
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border transition-all duration-200 ${badgeStyle}`}>
+      {icon}
+      <span>{text}</span>
+    </span>
+  );
 }
 
 export default function CustomersView({
@@ -46,12 +116,39 @@ export default function CustomersView({
   onEditOrder,
   onDeleteOrder,
   onToggleArchive,
+  onDuplicateOrder,
   onNavigate,
   onImportBackup,
   onExportBackup,
   onRefreshOrders
 }: CustomersProps) {
   const { showToast } = useToast();
+
+  const getWhatsAppUrl = (order: Order) => {
+    let phone = order.phone.replace(/[\s-+]/g, '');
+    if (phone.startsWith('05')) {
+      phone = '966' + phone.substring(1);
+    } else if (phone.startsWith('5')) {
+      phone = '966' + phone;
+    }
+    
+    const stageName = order.stage === 'تقطيع' ? '🪚 تقطيع الألواح' :
+                      order.stage === 'تجميع' ? '🔨 تجميع الوحدات' :
+                      order.stage === 'طلاء' ? '🎨 طلاء وتجهيز' :
+                      order.stage === 'تسليم' ? '🚚 تسليم وتركيب' :
+                      '✏️ تصميم وإعداد المخططات';
+                      
+    const message = `مرحباً بك عميلنا العزيز: ${order.customerName} 👋
+
+نود تذكيركم وإفادتكم بآخر تحديث لطلبكم/عقدكم رقم [ ${order.contractNo || '—'} ]:
+
+📌 حالة الطلب: ${order.status || 'قيد الانتظار'}
+🛠️ مرحلة العمل: ${stageName}
+
+نسعد دائماً بخدمتكم وتلبية تطلعاتكم! ✨`;
+
+    return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  };
   // Primary Quick search
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -76,12 +173,23 @@ export default function CustomersView({
     const isArchivedOrder = !!o.archived;
     if (showArchived !== isArchivedOrder) return false;
 
-    // 1. General search across multiple fields
+    // 1. General search across multiple fields (Customer Name, Phone, Contract No, and Status)
     const matchesSearch = !searchQuery ? true : (
       o.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       o.contractNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
       o.phone.includes(searchQuery) ||
-      (o.address || '').toLowerCase().includes(searchQuery.toLowerCase())
+      (o.address || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      o.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (
+        o.status === 'قيد الانتظار' || o.status === 'Pending' ? 'قيد الانتظار معلق' :
+        o.status === 'في التصنيع' || o.status === 'قيد التصنيع' ? 'في التصنيع قيد التصنيع' :
+        o.status === 'جاهز' ? 'جاهز للتركيب مكتمل التصنيع' :
+        o.status === 'جاهز للشحن' ? 'جاهز للشحن' :
+        o.status === 'تم التركيب' ? 'تم التركيب' :
+        o.status === 'Active' ? 'نشط قيد التنفيذ' :
+        o.status === 'Completed' ? 'تم التسليم مكتمل' :
+        o.status === 'Cancelled' ? 'ملغي' : ''
+      ).includes(searchQuery)
     );
 
     // 2. Specific search: Customer Name
@@ -129,7 +237,14 @@ export default function CustomersView({
     }
 
     // 7. Select filters
-    const matchesStatus = statusFilter === 'All' || o.status === statusFilter;
+    let matchesStatus = statusFilter === 'All';
+    if (!matchesStatus) {
+      if (statusFilter === 'في التصنيع') {
+        matchesStatus = o.status === 'في التصنيع' || o.status === 'قيد التصنيع';
+      } else {
+        matchesStatus = o.status === statusFilter;
+      }
+    }
     const matchesStage = stageFilter === 'All' || o.stage === stageFilter;
     const matchesDesigner = designerFilter === 'All' || (o.designerName || 'غير محدد') === designerFilter;
 
@@ -237,13 +352,15 @@ export default function CustomersView({
             <input type="file" accept=".json" className="hidden" onChange={handleFileImport} />
           </label>
 
-          <button
-            onClick={() => onNavigate('new-order')}
-            className="px-4 py-2 bg-brand-dark text-brand-cream border-2 border-brand-gold hover:bg-brand-gold hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
-          >
-            <Plus size={16} />
-            كرت جديد
-          </button>
+          {(currentUser.role === 'admin' || currentUser.permissions?.includes('create_order') || currentUser.permissions?.includes('all')) && (
+            <button
+              onClick={() => onNavigate('new-order')}
+              className="px-4 py-2 bg-brand-dark text-brand-cream border-2 border-brand-gold hover:bg-brand-gold hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+            >
+              <Plus size={16} />
+              كرت جديد
+            </button>
+          )}
         </div>
       </div>
 
@@ -313,13 +430,14 @@ export default function CustomersView({
             >
               <option value="All">كل الحالات</option>
               <option value="قيد الانتظار">🕒 قيد الانتظار</option>
-              <option value="في التصنيع">🏭 في التصنيع</option>
-              <option value="جاهز">✅ جاهز</option>
+              <option value="في التصنيع">🏭 قيد التصنيع / في التصنيع</option>
+              <option value="جاهز">📦 جاهز للتركيب</option>
+              <option value="جاهز للشحن">🚚 جاهز للشحن</option>
               <option value="تم التركيب">🏠 تم التركيب</option>
-              <option value="Active">قيد التنفيذ (نشط)</option>
-              <option value="Pending">قيد الانتظار (معلق)</option>
-              <option value="Completed">تم التسليم (مكتمل)</option>
-              <option value="Cancelled">ملغي</option>
+              <option value="Active">⚙️ قيد التنفيذ (نشط)</option>
+              <option value="Pending">🕒 معلق / انتظار</option>
+              <option value="Completed">✅ مكتمل (تم التسليم)</option>
+              <option value="Cancelled">❌ ملغي</option>
             </select>
 
             {/* Dropdown stage */}
@@ -565,26 +683,8 @@ export default function CustomersView({
                          '✏️ تصميم'}
                       </span>
                     </td>
-                    <td className="p-4">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black border ${
-                          o.status === 'في التصنيع' || o.status === 'Active' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                          o.status === 'تم التركيب' || o.status === 'Completed' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                          o.status === 'جاهز' ? 'bg-teal-50 text-teal-700 border-teal-200' :
-                          o.status === 'Cancelled' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                          'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}
-                      >
-                        {o.status === 'قيد الانتظار' ? '🕒 قيد الانتظار' :
-                         o.status === 'في التصنيع' ? '🏭 في التصنيع' :
-                         o.status === 'جاهز' ? '✅ جاهز' :
-                         o.status === 'تم التركيب' ? '🏠 تم التركيب' :
-                         o.status === 'Active' ? 'قيد التنفيذ' :
-                         o.status === 'Completed' ? 'تم التسليم' :
-                         o.status === 'Cancelled' ? 'ملغي' :
-                         o.status === 'Pending' ? 'معلق' :
-                         o.status}
-                      </span>
+                    <td className="p-4 text-center">
+                      {renderStatusBadge(o.status)}
                     </td>
                     <td className="p-4">
                       <div className="flex justify-center gap-1.5">
@@ -596,6 +696,16 @@ export default function CustomersView({
                           <Eye size={13} />
                         </button>
 
+                        <a
+                          href={getWhatsAppUrl(o)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center cursor-pointer"
+                          title="إرسال تذكير عبر واتساب"
+                        >
+                          <MessageSquare size={13} />
+                        </a>
+
                         {(currentUser.role === 'admin' || currentUser.permissions?.includes('edit_order') || currentUser.permissions?.includes('all')) && (
                           <button
                             onClick={() => onEditOrder(o.id)}
@@ -603,6 +713,20 @@ export default function CustomersView({
                             title="تعديل كرت العميل"
                           >
                             <Edit2 size={13} />
+                          </button>
+                        )}
+
+                        {(currentUser.role === 'admin' || currentUser.permissions?.includes('create_order') || currentUser.permissions?.includes('all')) && (
+                          <button
+                            onClick={() => {
+                              if (confirm(`هل ترغب في نسخ كرت العميل "${o.customerName}" لإنشاء طلب جديد بنفس المواصفات؟`)) {
+                                onDuplicateOrder(o.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-600 hover:text-white transition-all cursor-pointer"
+                            title="نسخ وتكرار الكرت (Duplicate)"
+                          >
+                            <Copy size={13} />
                           </button>
                         )}
 

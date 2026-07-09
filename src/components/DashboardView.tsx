@@ -1,6 +1,8 @@
 import React from 'react';
-import { FileText, Calendar, CheckCircle, Clock, Star, ArrowLeftCircle, BarChart3, TrendingUp, AlertTriangle, Bell, AlertCircle, Settings } from 'lucide-react';
+import { FileText, Calendar, CheckCircle, Clock, Star, ArrowLeftCircle, BarChart3, TrendingUp, AlertTriangle, Bell, AlertCircle, Settings, Wrench } from 'lucide-react';
 import { Order } from '../types';
+import { renderStatusBadge } from './CustomersView';
+import { getMachines } from '../lib/storage';
 import {
   ResponsiveContainer,
   BarChart,
@@ -29,9 +31,9 @@ export default function DashboardView({ orders: allOrders, onViewOrder, onPrintO
   const orders = allOrders.filter(o => !o.archived);
 
   const totalCount = orders.length;
-  const activeCount = orders.filter(o => o.status === 'Active').length;
-  const pendingCount = orders.filter(o => o.status === 'Pending').length;
-  const completedCount = orders.filter(o => o.status === 'Completed').length;
+  const activeCount = orders.filter(o => o.status === 'Active' || o.status === 'في التصنيع' || o.status === 'قيد التصنيع' || o.status === 'جاهز' || o.status === 'جاهز للشحن').length;
+  const pendingCount = orders.filter(o => o.status === 'Pending' || o.status === 'قيد الانتظار').length;
+  const completedCount = orders.filter(o => o.status === 'Completed' || o.status === 'تم التركيب').length;
 
   // 1. Calculate item statistics across categories (سلال، رفوف، أدراج)
   let basketsQty = 0;
@@ -232,7 +234,7 @@ export default function DashboardView({ orders: allOrders, onViewOrder, onPrintO
 
   orders.forEach(o => {
     // Only alert on non-completed, non-cancelled orders
-    if (o.status !== 'Active' && o.status !== 'Pending') return;
+    if (o.status === 'Completed' || o.status === 'تم التركيب' || o.status === 'Cancelled') return;
     if (!o.date) return;
 
     // Parse duration. e.g. "30 يوم" or "15"
@@ -284,6 +286,21 @@ export default function DashboardView({ orders: allOrders, onViewOrder, onPrintO
   const delayedCount = factoryAlerts.filter(a => a.type === 'delayed').length;
   const approachingCount = factoryAlerts.filter(a => a.type === 'approaching').length;
 
+  // Machine maintenance schedules calculation
+  const machines = getMachines();
+  const todayStr = new Date().toISOString().split('T')[0];
+  
+  const machinesWithAlerts = machines.filter(m => {
+    if (m.status === 'under_maintenance' || m.status === 'maintenance_due') return true;
+    if (m.nextMaintenanceDate < todayStr) return true;
+    
+    const tDate = new Date(todayStr);
+    const nDate = new Date(m.nextMaintenanceDate);
+    const diffTime = nDate.getTime() - tDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays <= 7; // within 7 days
+  });
+
   return (
     <div className="space-y-6">
       {/* Title Header */}
@@ -301,110 +318,218 @@ export default function DashboardView({ orders: allOrders, onViewOrder, onPrintO
         </button>
       </div>
 
-      {/* Factory Follow-up Alerts & Notifications Area */}
-      {(factoryAlerts.length > 0) ? (
-        <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-sm space-y-3.5">
-          <div className="flex items-center justify-between border-b pb-2.5">
-            <div className="flex items-center gap-2 justify-start">
+      {/* قسم تنبيهات صيانة الآلات الوقائية */}
+      {machinesWithAlerts.length > 0 && (
+        <div className="bg-white rounded-2xl border border-amber-200 p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+            <div className="flex items-center gap-2">
               <div className="relative">
-                <Bell size={18} className="text-brand-gold animate-bounce" />
-                <span className="absolute -top-1 -right-1.5 w-4 h-4 rounded-full bg-rose-600 text-white font-black text-[8px] flex items-center justify-center">
-                  {factoryAlerts.length}
-                </span>
+                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-600"></span>
               </div>
-              <h3 className="font-black text-sm text-brand-dark">تنبيهات المصنع وجدول مواعيد تسليم المطابخ</h3>
+              <div className="mr-1">
+                <h3 className="font-black text-base text-brand-dark flex items-center gap-1.5">
+                  🔧 تنبيهات الصيانة الوقائية لآلات المصنع
+                </h3>
+                <p className="text-[11px] text-brand-med">معدات خط الإنتاج التي قاربت أو تجاوزت موعد صيانتها الدورية المعتمدة.</p>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-[10px] font-black">
+            
+            <button
+              onClick={() => onNavigate('machines')}
+              className="px-3.5 py-1.5 bg-brand-dark hover:bg-black text-white text-xs font-black rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <span>فتح لوحة جدولة وصيانة الآلات</span>
+              <Wrench size={12} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {machinesWithAlerts.map(m => {
+              const overdue = m.nextMaintenanceDate < todayStr;
+              return (
+                <div key={m.id} className={`p-4 rounded-xl border flex flex-col justify-between space-y-2.5 shadow-sm ${
+                  overdue || m.status === 'maintenance_due'
+                    ? 'bg-rose-50/20 border-rose-200 text-rose-950'
+                    : 'bg-amber-50/20 border-amber-200 text-amber-950'
+                }`}>
+                  <div className="flex justify-between items-start gap-1">
+                    <div>
+                      <h4 className="font-black text-xs text-brand-dark truncate max-w-[150px]">{m.name}</h4>
+                      <p className="text-[10px] font-mono font-bold text-brand-med truncate">{m.model}</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black ${
+                      overdue || m.status === 'maintenance_due'
+                        ? 'bg-rose-100 text-rose-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {overdue ? 'متجاوزة الموعد ⚠️' : 'اقتربت الصيانة ⏰'}
+                    </span>
+                  </div>
+
+                  <p className="text-[10px] text-brand-med leading-relaxed line-clamp-2 bg-white/50 p-1.5 rounded border border-gray-100">
+                    {m.notes || 'تزييت وفحص الأجزاء الميكانيكية.'}
+                  </p>
+
+                  <div className="text-[10px] font-bold flex justify-between pt-1 border-t border-gray-150/40">
+                    <span className="text-gray-400">تاريخ الاستحقاق:</span>
+                    <span className={overdue ? 'text-rose-600 font-black' : 'text-amber-700 font-black'}>
+                      {m.nextMaintenanceDate}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* قسم الطلبات العاجلة ومواعيد التسليم الوشيكة */}
+      {(factoryAlerts.length > 0) ? (
+        <div className="bg-white rounded-2xl border border-red-100 p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75 animate-ping"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-600"></span>
+              </div>
+              <div className="mr-1">
+                <h3 className="font-black text-base text-brand-dark flex items-center gap-1.5">
+                  ⚠️ قسم الطلبات العاجلة ومتابعة الإنتاج والتركيب
+                </h3>
+                <p className="text-[11px] text-brand-med">قائمة كروت العملاء المتأخرة أو التي اقترب موعد تسليمها المحدد (خلال 10 أيام أو أقل)</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
               {delayedCount > 0 && (
-                <span className="px-2.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-100">
-                  ⚠️ متأخر: {delayedCount}
+                <span className="px-3 py-1 rounded-full text-xs font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse">
+                  🚨 متأخر جداً: {delayedCount}
                 </span>
               )}
               {approachingCount > 0 && (
-                <span className="px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100">
-                  ⏰ يقترب موعده: {approachingCount}
+                <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-700 border border-amber-200">
+                  ⏰ تسليم وشيك: {approachingCount}
                 </span>
               )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 max-h-56 overflow-y-auto pr-1">
-            {factoryAlerts.map((alert) => (
-              <div
-                key={alert.id}
-                className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 transition-all hover:shadow-sm ${
-                  alert.type === 'delayed'
-                    ? 'bg-rose-50/30 border-rose-100/70 hover:bg-rose-50/50'
-                    : 'bg-amber-50/30 border-amber-100/70 hover:bg-amber-50/50'
-                }`}
-              >
-                <div className="flex justify-between items-start gap-2">
-                  <div className="text-right">
-                    <span className="font-black text-xs text-brand-dark block truncate max-w-[160px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-h-[480px] overflow-y-auto pl-1 pr-1 custom-scrollbar">
+            {factoryAlerts.map((alert) => {
+              const isDelayed = alert.type === 'delayed';
+              
+              // Define active steps for the manufacturing progress bar
+              const stages = ['تصميم', 'تقطيع', 'تجميع', 'طلاء', 'تسليم'];
+              const currentStageIdx = stages.indexOf(alert.stage || 'تصميم');
+
+              return (
+                <div
+                  key={alert.id}
+                  className={`relative p-4 rounded-xl border flex flex-col justify-between space-y-3 transition-all duration-300 hover:shadow-md ${
+                    isDelayed
+                      ? 'bg-gradient-to-br from-rose-50/40 to-white border-rose-100/90 hover:border-rose-200'
+                      : 'bg-gradient-to-br from-amber-50/30 to-white border-amber-100/90 hover:border-amber-200'
+                  }`}
+                >
+                  {/* Decorative badge indicating extreme urgency */}
+                  <div className="absolute top-3 left-3">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black ${
+                      isDelayed 
+                        ? 'bg-rose-100 text-rose-800' 
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {isDelayed ? '⚠️ فائق الأهمية' : '⚡ عاجل'}
+                    </span>
+                  </div>
+
+                  {/* Customer and contract info */}
+                  <div className="space-y-1.5 text-right pl-16">
+                    <span className="font-black text-sm text-brand-dark block truncate">
                       {alert.customerName}
                     </span>
-                    <span className="text-[10px] text-brand-med font-mono">
-                      عقد: {alert.contractNo}
-                    </span>
+                    <div className="flex items-center gap-2 text-[10px] text-brand-med font-bold">
+                      <span>رقم العقد: <strong className="text-brand-dark font-mono">{alert.contractNo}</strong></span>
+                      <span className="text-gray-300">|</span>
+                      <span>تاريخ الاستحقاق: <strong className="text-brand-dark font-mono">{alert.deadlineDateStr}</strong></span>
+                    </div>
                   </div>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[9px] font-black ${
-                      alert.type === 'delayed'
-                        ? 'bg-rose-100 text-rose-800'
-                        : 'bg-amber-100 text-amber-800'
-                    }`}
-                  >
-                    {alert.type === 'delayed' ? 'متأخر فائق' : 'اقترب التسليم'}
-                  </span>
-                </div>
 
-                <div className="flex items-center justify-between text-[10px] font-bold">
-                  <div className="flex items-center gap-1">
-                    <span className="text-brand-med">المرحلة:</span>
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-brand-dark font-black text-[9px]">
-                      {alert.stage || 'تصميم'}
-                    </span>
+                  {/* Mini Interactive Progress Bar for Stages */}
+                  <div className="bg-gray-50/70 p-2 rounded-lg border border-gray-150/60 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-bold">
+                      <span className="text-brand-med">مرحلة الإنتاج الحالية:</span>
+                      <span className="text-brand-gold font-black bg-white px-2 py-0.5 rounded border border-gray-150">
+                        {alert.stage || 'تصميم'}
+                      </span>
+                    </div>
+                    
+                    {/* Visual stage track dots */}
+                    <div className="flex items-center justify-between gap-1 px-1 pt-1">
+                      {stages.map((stg, idx) => {
+                        const isPast = idx < currentStageIdx;
+                        const isCurrent = idx === currentStageIdx;
+                        
+                        return (
+                          <div key={stg} className="flex-1 flex flex-col items-center">
+                            <div className={`h-1.5 w-full rounded-full transition-colors ${
+                              isPast ? 'bg-brand-gold' : isCurrent ? 'bg-rose-500 animate-pulse' : 'bg-gray-200'
+                            }`} />
+                            <span className={`text-[8px] mt-1 font-bold ${
+                              isCurrent ? 'text-rose-600 font-black' : isPast ? 'text-brand-dark' : 'text-gray-400'
+                            }`}>
+                              {stg}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <span className="text-brand-med font-mono">تاريخ التسليم: {alert.deadlineDateStr}</span>
-                </div>
 
-                <div className="pt-1.5 border-t border-gray-100 flex items-center justify-between">
-                  <span
-                    className={`text-[10px] font-black ${
-                      alert.type === 'delayed' ? 'text-rose-700' : 'text-amber-700'
-                    }`}
-                  >
-                    {alert.type === 'delayed'
-                      ? `⚠️ متأخر منذ ${alert.daysLeftOrOverdue} أيام`
-                      : `⏰ متبقي ${alert.daysLeftOrOverdue} أيام فقط`}
-                  </span>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => onViewOrder(alert.id)}
-                      className="px-2 py-1 bg-white hover:bg-gray-50 text-brand-dark border border-gray-200 rounded text-[9px] font-bold cursor-pointer transition-all"
-                    >
-                      عرض المواصفات
-                    </button>
-                    <button
-                      onClick={() => onPrintOrder(alert.id)}
-                      className="px-2 py-1 bg-brand-gold text-white hover:bg-[#9A7008] rounded text-[9px] font-bold cursor-pointer transition-all"
-                    >
-                      طباعة
-                    </button>
+                  {/* Alert Countdown Statement & Action Buttons */}
+                  <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="relative flex h-2 w-2">
+                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isDelayed ? 'bg-rose-400' : 'bg-amber-400'}`}></span>
+                        <span className={`relative inline-flex rounded-full h-2 w-2 ${isDelayed ? 'bg-rose-600' : 'bg-amber-600'}`}></span>
+                      </span>
+                      <span className={`text-xs font-black ${isDelayed ? 'text-rose-700' : 'text-amber-700'}`}>
+                        {isDelayed
+                          ? `متأخر منذ ${alert.daysLeftOrOverdue} أيام`
+                          : `متبقي ${alert.daysLeftOrOverdue} أيام للتسليم`}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-1.5 shrink-0">
+                      <button
+                        onClick={() => onViewOrder(alert.id)}
+                        className="px-2.5 py-1.5 bg-white hover:bg-gray-50 text-brand-dark border border-gray-200 rounded-lg text-[10px] font-black cursor-pointer transition-all hover:border-gray-300"
+                        title="عرض كرت المقاسات والمواصفات"
+                      >
+                        تفاصيل الكرت
+                      </button>
+                      <button
+                        onClick={() => onPrintOrder(alert.id)}
+                        className="px-2.5 py-1.5 bg-brand-gold text-white hover:bg-[#9A7008] rounded-lg text-[10px] font-black cursor-pointer transition-all"
+                        title="طباعة أمر التصنيع للورشة"
+                      >
+                        طباعة 🖨️
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm flex items-center gap-3 text-right">
-          <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-            <CheckCircle size={16} />
+        <div className="bg-gradient-to-r from-emerald-50/50 to-teal-50/30 rounded-2xl border border-emerald-100 p-5 shadow-sm flex items-center gap-4 text-right">
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-600 shrink-0">
+            <CheckCircle size={22} className="animate-pulse" />
           </div>
           <div>
-            <h4 className="text-xs font-black text-brand-dark">جميع طلبيات ومطابخ العملاء مطابقة للجدول الزمني بنجاح!</h4>
-            <p className="text-[10px] text-brand-med mt-0.5">لا توجد أي طلبيات متأخرة أو قريبة جداً من استحقاق التسليم دون إتمامها.</p>
+            <h4 className="text-sm font-black text-brand-dark">🎉 جدول مواعيد تسليم مطابخ العملاء سليم ومنتظم تماماً!</h4>
+            <p className="text-xs text-brand-med mt-0.5">ممتاز! لا توجد حالياً أي كروت إنتاج متأخرة أو عاجلة تقترب من استحقاق التسليم دون إتمامها داخل المصنع.</p>
           </div>
         </div>
       )}
@@ -723,13 +848,7 @@ export default function DashboardView({ orders: allOrders, onViewOrder, onPrintO
                       <td className="p-4 font-mono text-brand-med" dir="ltr">{o.phone}</td>
                       <td className="p-4 text-brand-med">{o.date}</td>
                       <td className="p-4">
-                        <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          o.status === 'Active' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
-                          o.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                          'bg-amber-50 text-amber-600 border border-amber-100'
-                        }`}>
-                          {o.status === 'Active' ? 'نشط' : o.status === 'Completed' ? 'مكتمل' : 'قيد الانتظار'}
-                        </span>
+                        {renderStatusBadge(o.status)}
                       </td>
                       <td className="p-4">
                         <div className="flex justify-center gap-2">
