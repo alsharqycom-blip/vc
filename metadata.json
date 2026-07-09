@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Ville Cuisine - نظام إدارة المصنع",
+  "description": "نظام متكامل لإدارة مصنع مطابخ فيلا كوزين وتتبع كروت طلبات ومقاسات ومواصفات العملاء بدعم كامل للغة العربية والطباعة",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

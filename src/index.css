@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Tajawal", "Inter", system-ui, -apple-system, sans-serif;
+  --color-brand-dark: #3F3F3F;
+  --color-brand-med: #595959;
+  --color-brand-gold: #B68D40;
+  --color-brand-gold-light: #D4A843;
+  --color-brand-cream: #FDFAED;
+
+  /* Enlarge standard text sizes for optimal Arabic typography readability */
+  --text-xs: 0.85rem;      /* ~13.6px default base scale */
+  --text-sm: 0.95rem;      /* ~15.2px default base scale */
+  --text-base: 1.075rem;   /* ~17.2px default base scale */
+  --text-lg: 1.25rem;      /* ~20px default base scale */
+  --text-xl: 1.45rem;      /* ~23.2px default base scale */
+  --text-2xl: 1.8rem;      /* ~28.8px default base scale */
+  --text-3xl: 2.25rem;     /* ~36px default base scale */
+}
+
+/* Set HTML root font size slightly larger so all rem-based layouts and fonts scale up elegantly */
+html {
+  font-size: 108% !important;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer utilities {
+  /* Print styling helpers */
+  @media print {
+    body {
+      background: white !important;
+      color: black !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    .no-print {
+      display: none !important;
+    }
+    .print-container {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-shadow: none !important;
+      border: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: white !important;
+    }
+    .page-break-after {
+      page-break-after: always;
+    }
+  }
+}
